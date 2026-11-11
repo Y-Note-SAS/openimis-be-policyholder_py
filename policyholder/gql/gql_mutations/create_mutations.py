@@ -7,6 +7,7 @@ from policyholder.gql.gql_mutations import PolicyHolderInputType, PolicyHolderIn
     PolicyHolderContributionPlanInputType, PolicyHolderUserInputType
 from policyholder.validation import PolicyHolderValidation
 from policyholder.validation.permission_validation import PermissionValidation
+from policyholder.validation.scope_validation import ScopeValidation
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext as _
 
@@ -37,6 +38,8 @@ class CreatePolicyHolderMutation(BaseHistoryModelCreateMutationMixin, BaseMutati
         super()._validate_mutation(user, **data)
         PermissionValidation.validate_perms(user, PolicyholderConfig.gql_mutation_create_policyholder_perms)
         PolicyHolderValidation.validate_create(user, **data)
+        # within the author's districts
+        ScopeValidation.location(user, data.get('locations_id'))
 
 
 class CreatePolicyHolderInsureeMutation(BaseHistoryModelCreateMutationMixin, BaseMutation):
@@ -51,6 +54,10 @@ class CreatePolicyHolderInsureeMutation(BaseHistoryModelCreateMutationMixin, Bas
     def _validate_mutation(cls, user, **data):
         super()._validate_mutation(user, **data)
         PermissionValidation.validate_perms(user, PolicyholderConfig.gql_mutation_create_policyholderinsuree_perms)
+        # the policy holder and the insuree within the author's scope (they were trusted as given)
+        ScopeValidation.policy_holder(user, data.get('policy_holder_id'))
+        ScopeValidation.insuree(user, data.get('insuree_id'))
+        ScopeValidation.validate_links(user, data, bundle=True)
 
 
 class CreatePolicyHolderContributionPlanMutation(BaseHistoryModelCreateMutationMixin, BaseMutation):
@@ -65,6 +72,8 @@ class CreatePolicyHolderContributionPlanMutation(BaseHistoryModelCreateMutationM
     def _validate_mutation(cls, user, **data):
         super()._validate_mutation(user, **data)
         PermissionValidation.validate_perms(user, PolicyholderConfig.gql_mutation_create_policyholdercontributionplan_perms)
+        ScopeValidation.policy_holder(user, data.get('policy_holder_id'))
+        ScopeValidation.contribution_plan_bundle(data.get('contribution_plan_bundle_id'))
 
 
 class CreatePolicyHolderUserMutation(BaseHistoryModelCreateMutationMixin, BaseMutation):
@@ -93,3 +102,9 @@ class CreatePolicyHolderUserMutation(BaseHistoryModelCreateMutationMixin, BaseMu
     def _validate_mutation(cls, user, **data):
         super()._validate_mutation(user, **data)
         PermissionValidation.validate_perms(user, PolicyholderConfig.gql_mutation_create_policyholderuser_perms)
+        # the link grants the policy holder's portal scope: only on a policy holder the
+        # author may see, and never to themselves (privilege escalation)
+        ScopeValidation.policy_holder(user, data.get('policy_holder_id'))
+        if not data.get('user_id'):
+            raise ValidationError(_("policyholder.validation.user_required"))
+        ScopeValidation.linked_user(user, data['user_id'])

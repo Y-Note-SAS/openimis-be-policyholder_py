@@ -4,7 +4,8 @@ import graphene_django_optimizer as gql_optimizer
 from django.db.models import Q
 from core.schema import OrderedDjangoFilterConnectionField, signal_mutation_module_validate
 from core.services import wait_for_mutation
-from core.utils import append_validity_filter
+from core.gql import legacy_row_filters
+from core.models import Validity
 from location.services import get_ancestor_location_filter
 from policyholder.models import PolicyHolder, PolicyHolderInsuree, PolicyHolderUser, \
     PolicyHolderContributionPlan, PolicyHolderMutation, PolicyHolderInsureeMutation, \
@@ -78,34 +79,15 @@ class Query(graphene.ObjectType):
         return False if errors else True
 
     def resolve_policy_holder(self, info, **kwargs):
+        # the global right, or the portal one; the rows are narrowed by
+        # PolicyHolder.get_queryset (PolicyHolderGQLType): the districts for a global user,
+        # the policy holders a portal user is linked to
+        user = info.context.user
+        if not (user.has_perms(PolicyholderConfig.gql_query_policyholder_perms)
+                or user.has_perms(PolicyholderConfig.gql_query_policyholder_portal_perms)):
+            raise PermissionDenied(_("unauthorized"))
         filters = []
-        # go to process additional filter only when this arg of filter was passed into query
-        if not info.context.user.has_perms(PolicyholderConfig.gql_query_policyholder_perms):
-            # then check perms
-            if info.context.user.has_perms(PolicyholderConfig.gql_query_policyholder_portal_perms):
-                # check if user is linked to ph in policy holder user table
-                if info.context.user.i_user_id:
-                    from core import datetime
-                    now = datetime.datetime.now()
-                    uuids = PolicyHolderUser.objects.filter(
-                        Q(date_valid_to__isnull=True) | Q(date_valid_to__gte=now),
-                        is_deleted=False,
-                        user_id=info.context.user.id,
-                        date_valid_from__lte=now,
-                    ).values_list('policy_holder', flat=True).distinct()
-
-                    if uuids:
-                        filters.append(Q(id__in=uuids))
-                    else:
-                        raise PermissionDenied(_("unauthorized"))
-                else:
-                    raise PermissionDenied(_("unauthorized"))
-            else:
-                raise PermissionDenied(_("unauthorized"))
-
-        # if there is a filter it means that there is restricted permission found by a signal
-
-        filters += append_validity_filter(**kwargs)
+        _legacy_validity(info, kwargs)
 
         client_mutation_id = kwargs.pop("clientMutationId", None)
         if client_mutation_id:
@@ -122,29 +104,36 @@ class Query(graphene.ObjectType):
         if not info.context.user.has_perms(PolicyholderConfig.gql_query_policyholderinsuree_perms):
             if not info.context.user.has_perms(PolicyholderConfig.gql_query_policyholderinsuree_portal_perms):
                 raise PermissionError("Unauthorized")
-
-        filters = append_validity_filter(**kwargs)
-        query = PolicyHolderInsuree.objects
-        return gql_optimizer.query(query.filter(*filters).all(), info)
+        # rows narrowed to the policy holders in scope by PolicyHolderInsuree.get_queryset
+        _legacy_validity(info, kwargs)
+        return gql_optimizer.query(PolicyHolderInsuree.objects.all(), info)
 
     def resolve_policy_holder_user(self, info, **kwargs):
         if not info.context.user.has_perms(PolicyholderConfig.gql_query_policyholderuser_perms):
             if not info.context.user.has_perms(PolicyholderConfig.gql_query_policyholderuser_portal_perms):
                 raise PermissionError("Unauthorized")
-
-        filters = append_validity_filter(**kwargs)
-        query = PolicyHolderUser.objects
-        return gql_optimizer.query(query.filter(*filters).all(), info)
+        _legacy_validity(info, kwargs)
+        return gql_optimizer.query(PolicyHolderUser.objects.all(), info)
 
     def resolve_policy_holder_contribution_plan_bundle(self, info, **kwargs):
         if not info.context.user.has_perms(PolicyholderConfig.gql_query_policyholdercontributionplanbundle_perms):
             if not info.context.user.has_perms(
                     PolicyholderConfig.gql_query_policyholdercontributionplanbundle_portal_perms):
                 raise PermissionError("Unauthorized")
+        _legacy_validity(info, kwargs)
+        return gql_optimizer.query(PolicyHolderContributionPlan.objects.all(), info)
 
-        filters = append_validity_filter(**kwargs)
-        query = PolicyHolderContributionPlan.objects
-        return gql_optimizer.query(query.filter(*filters).all(), info)
+
+def _legacy_validity(info, kwargs):
+    """
+    The validity is applied by the models' get_queryset (OP-2029); the legacy arguments
+    keep their meaning: dateValidFrom__Gte / dateValidTo__Lte a business validity range,
+    applyDefaultValidityFilter the rows valid now, nothing at all every row.
+    """
+    if kwargs.get('dateValidFrom__Gte') or kwargs.get('dateValidTo__Lte'):
+        return legacy_row_filters(info, kwargs)
+    validity = Validity.NOW if kwargs.get('applyDefaultValidityFilter') else Validity.ALL
+    return legacy_row_filters(info, kwargs, validity=validity)
 
 
 class Mutation(graphene.ObjectType):
