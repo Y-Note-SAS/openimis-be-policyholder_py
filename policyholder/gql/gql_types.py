@@ -3,13 +3,14 @@ from contribution_plan.gql import ContributionPlanBundleGQLType
 from core import prefix_filterset, ExtendedConnection
 from core.gql_queries import UserGQLType
 from graphene_django import DjangoObjectType
+from core.gql.scoped_object_type import ScopedQuerysetMixin
 from insuree.schema import InsureeGQLType
 from location.gql_queries import LocationGQLType
 
 from policyholder.models import PolicyHolder, PolicyHolderInsuree, PolicyHolderUser, PolicyHolderContributionPlan
 
 
-class PolicyHolderGQLType(DjangoObjectType):
+class PolicyHolderGQLType(ScopedQuerysetMixin, DjangoObjectType):
 
     class Meta:
         model = PolicyHolder
@@ -34,12 +35,8 @@ class PolicyHolderGQLType(DjangoObjectType):
 
         connection_class = ExtendedConnection
 
-    @classmethod
-    def get_queryset(cls, queryset, info):
-        return PolicyHolder.get_queryset(queryset, info)
 
-
-class PolicyHolderInsureeGQLType(DjangoObjectType):
+class PolicyHolderInsureeGQLType(ScopedQuerysetMixin, DjangoObjectType):
 
     class Meta:
         model = PolicyHolderInsuree
@@ -59,12 +56,8 @@ class PolicyHolderInsureeGQLType(DjangoObjectType):
 
         connection_class = ExtendedConnection
 
-    @classmethod
-    def get_queryset(cls, queryset, info):
-        return PolicyHolderInsuree.get_queryset(queryset, info)
 
-
-class PolicyHolderContributionPlanGQLType(DjangoObjectType):
+class PolicyHolderContributionPlanGQLType(ScopedQuerysetMixin, DjangoObjectType):
 
     class Meta:
         model = PolicyHolderContributionPlan
@@ -83,12 +76,8 @@ class PolicyHolderContributionPlanGQLType(DjangoObjectType):
 
         connection_class = ExtendedConnection
 
-    @classmethod
-    def get_queryset(cls, queryset, info):
-        return PolicyHolderContributionPlan.get_queryset(queryset, info)
 
-
-class PolicyHolderUserGQLType(DjangoObjectType):
+class PolicyHolderUserGQLType(ScopedQuerysetMixin, DjangoObjectType):
 
     class Meta:
         model = PolicyHolderUser
@@ -106,7 +95,3 @@ class PolicyHolderUserGQLType(DjangoObjectType):
         }
 
         connection_class = ExtendedConnection
-
-    @classmethod
-    def get_queryset(cls, queryset, info):
-        return PolicyHolderUser.get_queryset(queryset, info)

@@ -5,6 +5,7 @@ from core.gql.gql_mutations.base_mutation import BaseReplaceMutation, BaseHistor
 from core.models import InteractiveUser
 from policyholder.models import PolicyHolder, PolicyHolderInsuree, PolicyHolderContributionPlan, PolicyHolderUser
 from policyholder.validation.permission_validation import PermissionValidation
+from policyholder.validation.scope_validation import ScopeValidation
 
 
 class ReplacePolicyHolderInsureeMutation(BaseHistoryModelReplaceMutationMixin, BaseReplaceMutation):
@@ -19,6 +20,7 @@ class ReplacePolicyHolderInsureeMutation(BaseHistoryModelReplaceMutationMixin, B
     def _validate_mutation(cls, user, **data):
         super()._validate_mutation(user, **data)
         PermissionValidation.validate_perms(user, PolicyholderConfig.gql_mutation_replace_policyholderinsuree_perms)
+        ScopeValidation.validate_links(user, data, insuree=True, bundle=True)
 
 
 class ReplacePolicyHolderContributionPlanMutation(BaseHistoryModelReplaceMutationMixin, BaseReplaceMutation):
@@ -33,6 +35,7 @@ class ReplacePolicyHolderContributionPlanMutation(BaseHistoryModelReplaceMutatio
     def _validate_mutation(cls, user, **data):
         super()._validate_mutation(user, **data)
         PermissionValidation.validate_perms(user, PolicyholderConfig.gql_mutation_replace_policyholdercontributionplan_perms)
+        ScopeValidation.validate_links(user, data, bundle=True)
 
 
 class ReplacePolicyHolderUserMutation(BaseHistoryModelReplaceMutationMixin, BaseReplaceMutation):
@@ -46,7 +49,8 @@ class ReplacePolicyHolderUserMutation(BaseHistoryModelReplaceMutationMixin, Base
             data.pop('client_mutation_id')
         if "client_mutation_label" in data:
             data.pop('client_mutation_label')
-        object_to_replace = cls._model.objects.filter(id=data['uuid']).first()
+        # within the author's scope, never cls._model.objects
+        object_to_replace = cls._target_queryset(user).filter(id=data['uuid']).first()
         if object_to_replace is None:
             cls._object_not_exist_exception(data['uuid'])
         else:
@@ -59,3 +63,4 @@ class ReplacePolicyHolderUserMutation(BaseHistoryModelReplaceMutationMixin, Base
     def _validate_mutation(cls, user, **data):
         super()._validate_mutation(user, **data)
         PermissionValidation.validate_perms(user, PolicyholderConfig.gql_mutation_replace_policyholderuser_perms)
+        ScopeValidation.validate_links(user, data, linked_user=True)
