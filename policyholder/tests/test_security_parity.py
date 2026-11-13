@@ -158,6 +158,19 @@ class PolicyHolderReadScopeTest(openIMISGraphQLTestCase):
         self.assertIn("PHRPHa", {e["node"]["policyHolder"]["code"]
                                  for e in everything["policyHolderInsuree"]["edges"]})
 
+    def test_default_validity_keeps_future_dated_rows(self):
+        # applyDefaultValidityFilter hides the expired rows only, as append_validity_filter
+        # did: a link starting next month is listed, one that ended yesterday is not.
+        now = datetime.datetime.now()
+        query = '{ policyHolderInsuree(applyDefaultValidityFilter: true) { edges { node { policyHolder { code } } } } }'
+        PolicyHolderInsuree.objects.filter(id=self.phi_a.id).update(date_valid_from=now + datetime.timedelta(days=30))
+        data = self._q(query, self.user_a)
+        self.assertIn("PHRPHa", {e["node"]["policyHolder"]["code"] for e in data["policyHolderInsuree"]["edges"]})
+        PolicyHolderInsuree.objects.filter(id=self.phi_a.id).update(
+            date_valid_from=now - datetime.timedelta(days=30), date_valid_to=now - datetime.timedelta(days=1))
+        data = self._q(query, self.user_a)
+        self.assertNotIn("PHRPHa", {e["node"]["policyHolder"]["code"] for e in data["policyHolderInsuree"]["edges"]})
+
 
 @override_settings(ROW_SECURITY=True)
 class PolicyHolderWriteScopeTest(TestCase):
